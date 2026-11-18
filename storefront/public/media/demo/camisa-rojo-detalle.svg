@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="220 260 360 450" width="800" height="1000" preserveAspectRatio="xMidYMid slice" role="img">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F6F2EC"/><stop offset="1" stop-color="#E9E2D8"/></linearGradient>
+  <linearGradient id="shade" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#000" stop-opacity=".16"/><stop offset=".35" stop-color="#fff" stop-opacity=".10"/>
+    <stop offset=".65" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".18"/>
+  </linearGradient>
+  <pattern id="weave" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <path d="M0 0 L0 8" stroke="#fff" stroke-opacity=".07" stroke-width="3"/>
+  </pattern>
+  <style>.st{fill:none;stroke:rgba(255,255,255,.28);stroke-width:3;stroke-dasharray:9 7;stroke-linecap:round}.btn{fill:#d9d2c5;opacity:.85}.hood{fill:#B3262E;stroke:rgba(0,0,0,.18);stroke-width:2}</style>
+</defs>
+<rect x="0" y="0" width="800" height="1000" fill="url(#bg)"/>
+<ellipse cx="400" cy="930" rx="250" ry="22" fill="#000" opacity=".07"/>
+<g>
+  <path d="M268 212 L350 176 L400 222 L450 176 L532 212 L604 304 L644 646 L588 656 L548 366 L548 826 L252 826 L252 366 L212 656 L156 646 L196 304 Z" fill="#B3262E" stroke="rgba(0,0,0,.18)" stroke-width="2"/>
+  <path d="M268 212 L350 176 L400 222 L450 176 L532 212 L604 304 L644 646 L588 656 L548 366 L548 826 L252 826 L252 366 L212 656 L156 646 L196 304 Z" fill="url(#shade)"/>
+  <path d="M268 212 L350 176 L400 222 L450 176 L532 212 L604 304 L644 646 L588 656 L548 366 L548 826 L252 826 L252 366 L212 656 L156 646 L196 304 Z" fill="url(#weave)"/>
+  <path d="M350 176 L388 262 L400 222 L412 262 L450 176" class="st"/><path d="M400 262 L400 820" class="st"/><circle cx="400" cy="300" r="7" class="btn"/><circle cx="400" cy="380" r="7" class="btn"/><circle cx="400" cy="460" r="7" class="btn"/><circle cx="400" cy="540" r="7" class="btn"/><circle cx="400" cy="620" r="7" class="btn"/><circle cx="400" cy="700" r="7" class="btn"/><circle cx="400" cy="780" r="7" class="btn"/><path d="M290 420 h70 v70 h-70 Z" class="st"/><path d="M212 640 L156 630 M588 640 L644 630" class="st"/>
+</g>
+</svg>

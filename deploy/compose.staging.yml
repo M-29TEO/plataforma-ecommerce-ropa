@@ -1,0 +1,14 @@
+# Staging: la misma topología que prod para probar cada versión de `main` antes de etiquetarla.
+# Lo despliega Woodpecker solo (.woodpecker/deploy-staging.yml) tras cada push a main con imágenes verdes.
+#
+# Diferencias con prod (docs/08-despliegue.md, tabla de entornos):
+#  - El correo NO sale: todo lo atrapa Mailpit (base). Nunca se escribe a clientes reales desde aquí.
+#  - Buscadores fuera (X-Robots-Tag: noindex) para que staging no compita con la tienda.
+#  - Sin copia de backups fuera del servidor (solo repo1) y límites de memoria más bajos.
+services:
+  edge:
+    environment:
+      X_ROBOTS_TAG: "noindex, nofollow"
+  pgbackrest:
+    environment:
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}   # una hora después de prod si comparten host

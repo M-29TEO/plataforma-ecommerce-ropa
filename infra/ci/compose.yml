@@ -1,0 +1,73 @@
+# Forja + CI propios y sin costo: Forgejo (repositorio, registro de contenedores) + Woodpecker CI
+# (server + agent). Para el laboratorio o el servidor de la universidad. Ver docs/08-despliegue.md, 8.3.
+#
+#   cd infra/ci && cp env.example .env && docker compose up -d
+#   Forgejo:    http://<FORGE_HOST>:3000   (el primer usuario que se registra es el administrador)
+#   Woodpecker: http://<FORGE_HOST>:8000   (entra con la cuenta de Forgejo, por OAuth)
+#
+# FORGE_HOST tiene que resolverse IGUAL desde el navegador y desde los contenedores (clones de los
+# pipelines, webhooks, OAuth): la IP del servidor en la red, o host.docker.internal en Docker Desktop.
+name: moda-ci
+
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:15
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      FORGEJO__server__ROOT_URL: http://${FORGE_HOST:-host.docker.internal}:3000/
+      FORGEJO__server__SSH_DOMAIN: ${FORGE_HOST:-host.docker.internal}
+      FORGEJO__server__SSH_PORT: "2222"
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO__service__DISABLE_REGISTRATION: ${FORGEJO_DISABLE_REGISTRATION:-false}
+      # Registro de contenedores (Packages): aquí publica images.yml.
+      FORGEJO__packages__ENABLED: "true"
+      # Webhooks hacia Woodpecker por la red interna.
+      FORGEJO__webhook__ALLOWED_HOST_LIST: private,loopback
+      FORGEJO__actions__ENABLED: "false"   # el CI es Woodpecker
+    ports: ["3000:3000", "2222:22"]
+    volumes: [forgejodata:/data]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    restart: unless-stopped
+
+  woodpecker-server:
+    image: woodpeckerci/woodpecker-server:v3
+    depends_on: [forgejo]
+    ports: ["8000:8000"]
+    environment:
+      WOODPECKER_HOST: http://${FORGE_HOST:-host.docker.internal}:8000
+      WOODPECKER_WEBHOOK_HOST: http://woodpecker-server:8000
+      WOODPECKER_FORGEJO: "true"
+      WOODPECKER_FORGEJO_URL: http://${FORGE_HOST:-host.docker.internal}:3000
+      # Aplicación OAuth2 creada en Forgejo (Configuración > Aplicaciones), redirect /authorize de Woodpecker.
+      WOODPECKER_FORGEJO_CLIENT: ${WOODPECKER_FORGEJO_CLIENT:-}
+      WOODPECKER_FORGEJO_SECRET: ${WOODPECKER_FORGEJO_SECRET:-}
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET:?falta WOODPECKER_AGENT_SECRET (openssl rand -hex 32)}
+      # Solo estos usuarios de Forgejo administran Woodpecker (marcar repos como Trusted, crons).
+      WOODPECKER_ADMIN: ${WOODPECKER_ADMIN:-}
+      WOODPECKER_OPEN: "false"
+    volumes: [woodpeckerdata:/var/lib/woodpecker]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    restart: unless-stopped
+
+  woodpecker-agent:
+    image: woodpeckerci/woodpecker-agent:v3
+    depends_on: [woodpecker-server]
+    command: agent
+    environment:
+      WOODPECKER_SERVER: woodpecker-server:9000
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET}
+      WOODPECKER_MAX_WORKFLOWS: ${WOODPECKER_MAX_WORKFLOWS:-2}
+      WOODPECKER_BACKEND: docker
+    volumes:
+      # El agente crea un contenedor por paso en este Docker. Los pasos que lo usan (Testcontainers,
+      # build de imágenes, simulacro) montan el socket: el repo debe estar marcado como Trusted.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - woodpeckeragent:/etc/woodpecker
+    restart: unless-stopped
+
+volumes:
+  forgejodata: {}
+  woodpeckerdata: {}
+  woodpeckeragent: {}

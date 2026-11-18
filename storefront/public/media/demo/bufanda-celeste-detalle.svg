@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="220 260 360 450" width="800" height="1000" preserveAspectRatio="xMidYMid slice" role="img">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F6F2EC"/><stop offset="1" stop-color="#E9E2D8"/></linearGradient>
+  <linearGradient id="shade" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#000" stop-opacity=".16"/><stop offset=".35" stop-color="#fff" stop-opacity=".10"/>
+    <stop offset=".65" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".18"/>
+  </linearGradient>
+  <pattern id="weave" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <path d="M0 0 L0 8" stroke="#000" stroke-opacity=".07" stroke-width="3"/>
+  </pattern>
+  <style>.st{fill:none;stroke:rgba(60,50,40,.35);stroke-width:3;stroke-dasharray:9 7;stroke-linecap:round}.btn{fill:#8a7f70;opacity:.85}.hood{fill:#8DB8DE;stroke:rgba(0,0,0,.18);stroke-width:2}</style>
+</defs>
+<rect x="0" y="0" width="800" height="1000" fill="url(#bg)"/>
+<ellipse cx="400" cy="930" rx="250" ry="22" fill="#000" opacity=".07"/>
+<g>
+  <path d="M296 170 L504 170 L522 300 L474 860 L378 860 L414 334 L346 334 L334 760 L246 760 Z" fill="#8DB8DE" stroke="rgba(0,0,0,.18)" stroke-width="2"/>
+  <path d="M296 170 L504 170 L522 300 L474 860 L378 860 L414 334 L346 334 L334 760 L246 760 Z" fill="url(#shade)"/>
+  <path d="M296 170 L504 170 L522 300 L474 860 L378 860 L414 334 L346 334 L334 760 L246 760 Z" fill="url(#weave)"/>
+  <path d="M300 214 L508 214 M306 262 L514 262" class="st"/><path d="M402 400 L462 400 M398 470 L456 470" class="st"/><path d="M384 862 L384 910" class="st"/><path d="M400 862 L400 910" class="st"/><path d="M416 862 L416 910" class="st"/><path d="M432 862 L432 910" class="st"/><path d="M448 862 L448 910" class="st"/><path d="M464 862 L464 910" class="st"/><path d="M252 762 L252 808" class="st"/><path d="M268 762 L268 808" class="st"/><path d="M284 762 L284 808" class="st"/><path d="M300 762 L300 808" class="st"/><path d="M316 762 L316 808" class="st"/>
+</g>
+</svg>

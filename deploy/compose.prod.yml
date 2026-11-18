@@ -1,0 +1,23 @@
+# Producción (la demo pública). Solo se despliegan tags de git vX.Y (.woodpecker/deploy-prod.yml), con
+# las mismas imágenes que ya pasaron por staging. Va junto con deploy/compose.offsite.yml (copia cifrada
+# de los backups en otro host).
+#
+# Diferencias con staging (docs/08-despliegue.md, tabla de entornos):
+#  - Correo real por el SMTP de la institución (SMTP_URL); Mailpit queda sin uso.
+#  - Servicios de datos con restart: always y más memoria para PostgreSQL.
+x-smtp: &smtp
+  SMTP_URL: ${SMTP_URL:?falta SMTP_URL (SMTP de la universidad, p. ej. smtp://usuario:clave@smtp.uni.edu.ec:587)}
+
+services:
+  api:
+    environment: *smtp
+  worker:
+    environment: *smtp
+  postgres:
+    restart: always
+  pgbackrest:
+    restart: always
+  valkey:
+    restart: always
+  seaweedfs:
+    restart: always

@@ -1,0 +1,81 @@
+@import 'tailwindcss';
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+/*
+ * Tokens: los mismos neutros y el acento terracota de la tienda, en una interfaz más densa
+ * (tablas y formularios para trabajo diario).
+ */
+@theme {
+  --color-ink: #1f1b16;
+  --color-ink-soft: #5b5248;
+  --color-line: #e6dfd5;
+  --color-paper: #fbf8f4;
+  --color-sand: #f2ece3;
+  --color-panel: #ffffff;
+  --color-accent: #b4532a;
+  --color-accent-dark: #8f3f1e;
+  --color-ok: #2f6b3a;
+  /* Más oscuro que el de la tienda: sobre bg-warn/10 (insignias) llega a 4,5:1 (WCAG AA). */
+  --color-warn: #8a5209;
+  --color-danger: #a12a2a;
+  --color-info: #2b5c8a;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-paper text-ink antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* Componentes como utilidades (Tailwind 4: @utility; @apply solo compone utilidades). */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-ink text-paper hover:bg-accent-dark;
+}
+@utility btn-accent {
+  @apply btn bg-accent text-white hover:bg-accent-dark;
+}
+@utility btn-ghost {
+  @apply btn border border-line bg-panel text-ink hover:border-ink;
+}
+@utility btn-danger {
+  @apply btn bg-danger text-white hover:opacity-90;
+}
+@utility btn-sm {
+  @apply px-2.5 py-1 text-xs;
+}
+@utility input {
+  @apply w-full rounded-md border border-line bg-panel px-3 py-2 text-sm outline-none placeholder:text-ink-soft/60 focus:border-ink disabled:bg-sand;
+}
+@utility label {
+  @apply mb-1 block text-xs font-medium text-ink-soft;
+}
+@utility card {
+  @apply rounded-lg border border-line bg-panel;
+}
+@utility table-base {
+  @apply w-full border-collapse text-left text-sm;
+  & th {
+    @apply border-b border-line bg-sand/60 px-3 py-2 text-xs font-semibold tracking-wide text-ink-soft uppercase;
+  }
+  & td {
+    @apply border-b border-line/70 px-3 py-2 align-middle;
+  }
+  & tbody tr:hover {
+    @apply bg-sand/40;
+  }
+}
+@utility num {
+  @apply text-right tabular-nums;
+}

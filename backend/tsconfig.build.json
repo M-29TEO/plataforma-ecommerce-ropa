@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["apps/**/*.ts", "libs/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["**/*.spec.ts", "**/*.fixture.ts", "**/*.int-spec.ts", "test/**", "scripts/sri-sample-invoice.ts"]
+}

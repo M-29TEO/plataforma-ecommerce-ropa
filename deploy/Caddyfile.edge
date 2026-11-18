@@ -1,0 +1,36 @@
+# Borde de staging/prod (servicio `edge` de deploy/compose.server.yml): TLS automático con Let's Encrypt
+# (ACME, gratis) y nada más. Detrás siguen el WAF (ModSecurity + OWASP CRS) y el Caddy interno de
+# infra/Caddyfile, que enruta /api, /ws, /admin, /media y el storefront igual que en desarrollo.
+#
+#   Internet --443--> edge (TLS) --> waf:8080 --> caddy:80 --> api / realtime / web / backoffice
+#
+# Sin dominio público (demo detrás de frp, red interna): SITE_ADDRESS=:80 sirve HTTP plano y el TLS lo
+# pone el servidor frps (ver docs/08-despliegue.md, "Exponer la demo con frp").
+{
+	email {$ACME_EMAIL:admin@localhost}
+	servers {
+		# Solo el WAF y Caddy hablan con la API: la IP real del cliente viaja en X-Forwarded-For.
+		trusted_proxies static private_ranges
+	}
+}
+
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# staging: "noindex, nofollow" (deploy/compose.staging.yml) para que no lo indexen los buscadores.
+		X-Robots-Tag "{$X_ROBOTS_TAG:all}"
+		-Server
+	}
+	reverse_proxy waf:8080
+}
+
+# Página de pago del simulador (la abre el navegador del cliente) y ntfy (lo usa la app del motorizado).
+# Sin dominio propio quedan en hosts .invalid por HTTP (sin pedir certificados): no responden a nadie.
+{$PAYSIM_ADDRESS:http://pagos.invalid} {
+	reverse_proxy pasarela-simulada:3000
+}
+
+{$NTFY_ADDRESS:http://ntfy.invalid} {
+	reverse_proxy ntfy:80
+}

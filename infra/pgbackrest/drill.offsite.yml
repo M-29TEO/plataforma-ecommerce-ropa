@@ -1,0 +1,19 @@
+# Simulacro, escenario 3 (servidor perdido): la copia fuera del servidor de deploy/compose.offsite.yml
+# contra un SeaweedFS S3 desechable con HTTPS. drill.sh genera en el volumen s3certs un certificado
+# autofirmado para el host "s3" (pgBackRest lo verifica con BACKUP_S3_CA_FILE) y las credenciales S3.
+services:
+  s3:
+    image: chrislusf/seaweedfs:latest
+    command: >-
+      server -dir=/data -s3 -s3.port=8333 -s3.config=/certs/s3.json
+      -s3.cert.file=/certs/s3.crt -s3.key.file=/certs/s3.key
+    volumes:
+      - s3certs:/certs:ro
+  postgres:
+    depends_on:
+      s3: { condition: service_started }
+
+volumes:
+  s3certs:
+    external: true
+    name: ${DRILL_S3_CERTS:?}

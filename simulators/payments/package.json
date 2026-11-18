@@ -1,0 +1,13 @@
+{
+  "name": "moda-paysim",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Pasarela de pago simulada: página de aprobación/rechazo y webhooks firmados con HMAC",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  }
+}

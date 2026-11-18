@@ -1,0 +1,265 @@
+# Alertas básicas de operación (Grafana unified alerting). Se montan en
+# /otel-lgtm/grafana/conf/provisioning/alerting/ (docker-compose.yml, servicio lgtm).
+# Grafana interpola ${VAR} del entorno en este archivo (NTFY_OPS_TOPIC); las plantillas {{ $labels.x }} quedan intactas.
+# Avisan por ntfy: tópico NTFY_OPS_TOPIC (bandeja en http://localhost:8090/<tópico>; app de ntfy en el celular).
+# La caída de la API la detecta además Uptime Kuma (GET /v1/health), que avisa al mismo tópico.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: ntfy-operacion
+    receivers:
+      - uid: ntfy-operacion
+        type: webhook
+        disableResolveMessage: false
+        settings:
+          # template=grafana: ntfy arma título y mensaje legibles con el JSON de Grafana.
+          url: http://ntfy:80/${NTFY_OPS_TOPIC}?template=grafana
+          httpMethod: POST
+
+policies:
+  - orgId: 1
+    receiver: ntfy-operacion
+    group_by: [grafana_folder, alertname]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+
+groups:
+  - orgId: 1
+    name: api
+    folder: Moda
+    interval: 1m
+    rules:
+      - uid: moda-api-p95
+        title: 'API: latencia p95 alta'
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: 'El p95 de la API supera 1 s ({{ humanizeDuration $values.A.Value }}).'
+          description: 'Revisa el panel "Latencia p95 por endpoint" para ver qué ruta es; en Tempo, las trazas más lentas.'
+          dashboard: http://localhost:3001/d/moda-operacion
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="moda-api"}[5m])))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [1] }
+
+      - uid: moda-api-5xx
+        title: 'API: tasa de errores 5xx'
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: 'Más del 5 % de las respuestas de la API son 5xx ({{ humanizePercentage $values.A.Value }}).'
+          description: 'Panel "Logs de error": cada línea trae request_id y trace_id.'
+          dashboard: http://localhost:3001/d/moda-operacion
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              # Con menos de ~6 requests en 5 min no se evalúa (un solo 500 no es el 100 % de nada).
+              expr: >-
+                (sum(rate(http_server_request_duration_seconds_count{service_name="moda-api", http_response_status_code=~"5.."}[5m])) or vector(0))
+                / (sum(rate(http_server_request_duration_seconds_count{service_name="moda-api"}[5m])) > 0.02)
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.05] }
+
+      - uid: moda-api-sin-telemetria
+        title: 'API sin telemetría'
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: 'moda-api no envía métricas hace más de 3 min: caída, reiniciándose o sin red hacia lgtm.'
+          dashboard: http://localhost:3001/d/moda-operacion
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: absent_over_time(target_info{service_name="moda-api"}[3m]) or vector(0)
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+  - orgId: 1
+    name: worker
+    folder: Moda
+    interval: 1m
+    rules:
+      - uid: moda-worker-sin-telemetria
+        title: 'Worker sin telemetría'
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: 'moda-worker no envía métricas hace más de 3 min: no corren jobs, outbox ni facturación.'
+          dashboard: http://localhost:3001/d/moda-operacion
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: absent_over_time(target_info{service_name="moda-worker"}[3m]) or vector(0)
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      - uid: moda-cola-atascada
+        title: 'Cola atascada'
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: 'La cola {{ $labels.queue }} tiene {{ $values.A.Value }} jobs esperando hace más de 10 min.'
+          dashboard: http://localhost:3001/d/moda-operacion
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: sum by (queue) (max by (queue, state) (bullmq_queue_jobs{state=~"waiting|prioritized"}))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [100] }
+
+      - uid: moda-jobs-fallidos
+        title: 'Jobs fallidos'
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: 'Fallaron {{ $values.A.Value }} jobs de la cola {{ $labels.queue }} en los últimos 15 min.'
+          description: 'Logs del worker: {service_name="moda-worker"} | detected_level="error"'
+          dashboard: http://localhost:3001/d/moda-operacion
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: max by (queue) (delta(bullmq_queue_jobs{state="failed"}[15m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      - uid: moda-outbox-fallos
+        title: 'Outbox: consumidores fallando'
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: 'Los consumidores de {{ $labels.event_type }} fallan ({{ $values.A.Value }} intentos en 15 min); el evento se reintenta hasta 10 veces.'
+          dashboard: http://localhost:3001/d/moda-operacion
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: sum by (event_type) (increase(outbox_events_failed_total[15m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+  - orgId: 1
+    name: facturacion
+    folder: Moda
+    interval: 1m
+    rules:
+      - uid: moda-sri-atascado
+        title: 'SRI: comprobantes atascados'
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: 'Hay comprobantes sin autorizar hace más de 30 min ({{ humanizeDuration $values.A.Value }}): el SRI no responde o el job de facturación no avanza.'
+          description: 'Panel "Facturas pendientes del SRI por estado"; en el SRI simulado, http://localhost:8083/admin/comprobantes.'
+          dashboard: http://localhost:3001/d/moda-operacion
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: max(sri_documents_pending_oldest_age_seconds)
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [1800] }

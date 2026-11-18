@@ -1,0 +1,9 @@
+# Simulacro de restauración (infra/pgbackrest/drill.sh): usa los servicios reales postgres y pgbackrest
+# de docker-compose.yml, en un proyecto aparte (moda-drill, volúmenes propios) y sin publicar puertos,
+# para no chocar con la base de desarrollo ni tocar sus datos.
+services:
+  postgres:
+    ports: !reset []
+  pgbackrest:
+    environment:
+      NTFY_URL: ""   # sin avisos a ntfy desde el simulacro

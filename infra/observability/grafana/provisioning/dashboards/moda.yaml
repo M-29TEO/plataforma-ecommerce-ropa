@@ -1,0 +1,10 @@
+# Dashboards del proyecto (se montan en /otel-lgtm/moda-dashboards; ver docker-compose.yml, servicio lgtm).
+apiVersion: 1
+providers:
+  - name: moda
+    folder: Moda
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /otel-lgtm/moda-dashboards

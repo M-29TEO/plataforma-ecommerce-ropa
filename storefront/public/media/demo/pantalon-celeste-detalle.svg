@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="220 260 360 450" width="800" height="1000" preserveAspectRatio="xMidYMid slice" role="img">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F6F2EC"/><stop offset="1" stop-color="#E9E2D8"/></linearGradient>
+  <linearGradient id="shade" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#000" stop-opacity=".16"/><stop offset=".35" stop-color="#fff" stop-opacity=".10"/>
+    <stop offset=".65" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".18"/>
+  </linearGradient>
+  <pattern id="weave" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <path d="M0 0 L0 8" stroke="#000" stroke-opacity=".07" stroke-width="3"/>
+  </pattern>
+  <style>.st{fill:none;stroke:rgba(60,50,40,.35);stroke-width:3;stroke-dasharray:9 7;stroke-linecap:round}.btn{fill:#8a7f70;opacity:.85}.hood{fill:#8DB8DE;stroke:rgba(0,0,0,.18);stroke-width:2}</style>
+</defs>
+<rect x="0" y="0" width="800" height="1000" fill="url(#bg)"/>
+<ellipse cx="400" cy="930" rx="250" ry="22" fill="#000" opacity=".07"/>
+<g>
+  <path d="M290 150 L510 150 L548 884 L438 884 L400 360 L362 884 L252 884 Z" fill="#8DB8DE" stroke="rgba(0,0,0,.18)" stroke-width="2"/>
+  <path d="M290 150 L510 150 L548 884 L438 884 L400 360 L362 884 L252 884 Z" fill="url(#shade)"/>
+  <path d="M290 150 L510 150 L548 884 L438 884 L400 360 L362 884 L252 884 Z" fill="url(#weave)"/>
+  <path d="M292 196 L508 196" class="st"/><path d="M400 196 L400 340" class="st"/><path d="M304 210 L344 300 M496 210 L456 300" class="st"/><path d="M322 400 L306 868 M478 400 L494 868" class="st"/><path d="M260 866 L360 866 M440 866 L540 866" class="st"/><rect x="388" y="162" width="24" height="24" rx="12" class="btn"/>
+</g>
+</svg>

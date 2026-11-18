@@ -1,0 +1,12 @@
+.env
+node_modules/
+dist/
+backups/
+infra/osrm/*.osrm*
+infra/osrm/*.pbf
+infra/tiles/*.pmtiles
+# Firma electrónica (clave privada): se genera con backend/scripts/generate-sri-cert.sh
+backend/secrets/
+backend/security-reports/
+# Secretos de los servidores (CA del S3 de backups, etc.): ver docs/08-despliegue.md
+deploy/secrets/

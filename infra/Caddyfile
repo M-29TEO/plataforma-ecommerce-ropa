@@ -1,0 +1,35 @@
+:80 {
+    # Sin la versión del servidor en las respuestas.
+    header -Server
+
+    # La API decide el tenant de una petición anónima (invitado) por X-Tenant-Id: lo fija Caddy y
+    # REEMPLAZA el que mande el cliente (header_up sobrescribe). Una tienda = un dominio = un tenant;
+    # con más marcas, un bloque por dominio con su STORE_TENANT_ID. Ver docs/07-seguridad.md (A01).
+    handle_path /api/* {
+        reverse_proxy api:3000 {
+            header_up X-Tenant-Id {$STORE_TENANT_ID}
+            # X-Request-Id para correlacionar el log de Caddy con la auditoría de la API.
+            header_up X-Request-Id {http.request.uuid}
+        }
+    }
+    # Fotos de producto subidas desde el backoffice (CATALOG_MEDIA_BASE_URL=/media): las sirve la API
+    # (GET /v1/catalog/media/products/...). El resto de /media son las ilustraciones de demo del storefront.
+    handle /media/products/* {
+        rewrite * /v1/catalog{path}
+        reverse_proxy api:3000
+    }
+    handle /ws/* {
+        reverse_proxy realtime:3002
+    }
+    handle_path /tiles/* {
+        root * /srv/tiles
+        file_server
+    }
+    # Backoffice: Next.js con basePath /admin, así que el prefijo NO se quita (handle, no handle_path).
+    handle /admin* {
+        reverse_proxy backoffice:3000
+    }
+    handle {
+        reverse_proxy web:3000
+    }
+}

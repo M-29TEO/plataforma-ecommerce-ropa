@@ -1,0 +1,41 @@
+# Despliegue a PRODUCCIÓN: manual y solo de tags vX.Y que ya pasaron por staging.
+#   1. git tag -a v1.2.0 -m "..." && git push origin v1.2.0   -> ci.yml + images.yml publican :v1.2.0
+#   2. Probar en staging (o desplegar ese tag allí).
+#   3. woodpecker-cli deploy <owner>/moda-ecommerce <n.º de pipeline del tag> prod
+#      (o el botón "Deploy" del pipeline del tag en la interfaz de Woodpecker)
+#
+# Antes de migrar se fuerza un backup diferencial: si la migración sale mal, el PITR tiene un punto
+# de partida reciente (docs/08-despliegue.md, DRP escenario 1).
+# Secretos: prod_host, deploy_user, deploy_ssh_key.
+when:
+  - event: deployment
+    evaluate: 'CI_PIPELINE_DEPLOY_TARGET == "prod"'
+
+skip_clone: true
+
+steps:
+  - name: solo-tags
+    image: alpine:3.22
+    commands:
+      - test -n "${CI_COMMIT_TAG}" || { echo "prod solo despliega tags de git (vX.Y.Z)"; exit 1; }
+
+  - name: desplegar-prod
+    image: appleboy/drone-ssh:1.8
+    settings:
+      host:
+        from_secret: prod_host
+      username:
+        from_secret: deploy_user
+      key:
+        from_secret: deploy_ssh_key
+      command_timeout: 30m
+      script_stop: true
+      script:
+        - cd /opt/moda-prod
+        - git fetch --quiet --tags origin && git checkout --quiet --detach ${CI_COMMIT_TAG}
+        - sed -i "s/^TAG=.*/TAG=${CI_COMMIT_TAG}/" .env
+        - docker compose pull --quiet
+        - docker compose exec -T pgbackrest pgbackrest --stanza=moda backup --type=diff
+        - docker compose run --rm migrate
+        - docker compose up -d --remove-orphans --wait --wait-timeout 300
+        - docker compose ps --format 'table {{.Service}}\t{{.Status}}'

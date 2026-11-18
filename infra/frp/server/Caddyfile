@@ -1,0 +1,9 @@
+# TLS de la demo en el servidor de la universidad: Caddy obtiene los certificados (Let's Encrypt) para
+# los tres dominios y pasa todo a frps, que lo manda por el túnel al PC donde corre la demo.
+{
+	email {$ACME_EMAIL:admin@localhost}
+}
+
+{$FRP_DEMO_DOMAIN}, {$FRP_PAYSIM_DOMAIN}, {$FRP_NTFY_DOMAIN} {
+	reverse_proxy frps:8080
+}

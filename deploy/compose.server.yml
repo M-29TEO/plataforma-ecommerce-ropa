@@ -1,0 +1,155 @@
+# Capa común de los servidores (staging y prod), encima de docker-compose.yml. Ver docs/08-despliegue.md.
+#
+#  - Imágenes del registro de Forgejo, construidas y escaneadas con Trivy por CI (.woodpecker/images.yml):
+#    en el servidor no se compila nada. TAG elige la versión (sha de 8, `main` o `vX.Y`).
+#  - Borde con TLS automático (servicio edge, Let's Encrypt); el WAF ya no publica puertos.
+#  - Ningún puerto de datos ni de administración hacia afuera: postgres, valkey, seaweedfs, simuladores,
+#    Mailpit, Grafana y Uptime Kuma quedan en la red interna o en 127.0.0.1 (túnel SSH para verlos).
+#  - Límites de memoria y logs rotados para que un servicio no tumbe al host.
+#
+# No se usa con -f a mano: el .env del servidor fija COMPOSE_FILE y COMPOSE_PROFILES
+# (deploy/env.staging.example, deploy/env.prod.example) y basta con `docker compose up -d`.
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "20m", max-file: "5" }
+
+services:
+  # ---------- BORDE ----------
+  edge:
+    profiles: [front]
+    image: caddy:2-alpine
+    ports:
+      - "${EDGE_HTTP_PORT:-80}:80"
+      - "${EDGE_HTTPS_PORT:-443}:443"
+      - "${EDGE_HTTPS_PORT:-443}:443/udp"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?falta SITE_ADDRESS (dominio de la tienda o :80 detrás de frp)}
+      PAYSIM_ADDRESS: ${PAYSIM_ADDRESS:-}
+      NTFY_ADDRESS: ${NTFY_ADDRESS:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      X_ROBOTS_TAG: all
+    volumes:
+      - ./deploy/Caddyfile.edge:/etc/caddy/Caddyfile:ro
+      - edgedata:/data
+      - edgeconfig:/config
+    depends_on: [waf]
+    restart: unless-stopped
+    logging: *logging
+    deploy: { resources: { limits: { memory: 256m } } }
+  waf:
+    ports: !reset []
+    restart: unless-stopped
+    logging: *logging
+    deploy: { resources: { limits: { memory: 512m } } }
+  caddy:
+    restart: unless-stopped
+    logging: *logging
+
+  # ---------- APLICACIÓN ----------
+  api:
+    build: !reset null
+    image: ${REGISTRY:?falta REGISTRY}/${IMAGE_OWNER:?falta IMAGE_OWNER}/moda-api:${TAG:?falta TAG}
+    environment: &app-public-urls
+      PAYSIM_PUBLIC_URL: ${PAYSIM_PUBLIC_URL:-https://${PAYSIM_ADDRESS:-pagos.invalid}}
+      PAYMENT_RETURN_URL: ${PUBLIC_URL:?falta PUBLIC_URL}/checkout/resultado
+      STOREFRONT_URL: ${PUBLIC_URL}
+      NTFY_PUBLIC_URL: ${NTFY_PUBLIC_URL:-https://${NTFY_ADDRESS:-ntfy.invalid}}
+    logging: *logging
+    deploy: { resources: { limits: { memory: 768m } } }
+  worker:
+    build: !reset null
+    image: ${REGISTRY}/${IMAGE_OWNER}/moda-api:${TAG}
+    environment: *app-public-urls
+    logging: *logging
+    deploy: { resources: { limits: { memory: 768m } } }
+  realtime:
+    build: !reset null
+    image: ${REGISTRY}/${IMAGE_OWNER}/moda-api:${TAG}
+    environment: *app-public-urls
+    logging: *logging
+    deploy: { resources: { limits: { memory: 384m } } }
+  # Migraciones antes de cada despliegue:  docker compose run --rm migrate
+  migrate:
+    profiles: [front]
+    image: ${REGISTRY}/${IMAGE_OWNER}/moda-api:${TAG}
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://app:${PG_PASSWORD}@postgres:5432/moda
+    command: ["node", "node_modules/node-pg-migrate/bin/node-pg-migrate.js", "-m", "migrations", "-j", "js", "--check-order", "up"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+    healthcheck: { disable: true }
+  web:
+    build: !reset null
+    image: ${REGISTRY}/${IMAGE_OWNER}/moda-web:${TAG}
+    logging: *logging
+    deploy: { resources: { limits: { memory: 512m } } }
+  backoffice:
+    build: !reset null
+    image: ${REGISTRY}/${IMAGE_OWNER}/moda-backoffice:${TAG}
+    logging: *logging
+    deploy: { resources: { limits: { memory: 384m } } }
+
+  # ---------- DATOS ----------
+  postgres:
+    build: !reset null
+    image: ${REGISTRY}/${IMAGE_OWNER}/moda-postgres:${TAG}
+    ports: !reset []
+    shm_size: 256m
+    logging: *logging
+    deploy: { resources: { limits: { memory: "${PG_MEMORY_LIMIT:-2g}" } } }
+  pgbackrest:
+    build: !reset null
+    image: ${REGISTRY}/${IMAGE_OWNER}/moda-postgres:${TAG}
+    logging: *logging
+    deploy: { resources: { limits: { memory: 512m } } }
+  valkey:
+    ports: !reset []
+    restart: unless-stopped
+    logging: *logging
+    deploy: { resources: { limits: { memory: 512m } } }
+  seaweedfs:
+    ports: !reset []
+    restart: unless-stopped
+    logging: *logging
+
+  # ---------- SIMULADORES (siguen siendo simuladores: no hay pasarela, SRI ni courier reales) ----------
+  pasarela-simulada:
+    build: !reset null
+    image: ${REGISTRY}/${IMAGE_OWNER}/moda-pasarela-simulada:${TAG}
+    ports: !reset []
+    logging: *logging
+  courier-simulado:
+    build: !reset null
+    image: ${REGISTRY}/${IMAGE_OWNER}/moda-courier-simulado:${TAG}
+    ports: !reset []
+    logging: *logging
+  sri-simulado:
+    build: !reset null
+    image: ${REGISTRY}/${IMAGE_OWNER}/moda-sri-simulado:${TAG}
+    ports: !reset []
+    logging: *logging
+
+  # ---------- NOTIFICACIONES Y OBSERVABILIDAD: solo por túnel SSH ----------
+  mailpit:
+    ports: !override ["127.0.0.1:8025:8025"]
+    restart: unless-stopped
+    logging: *logging
+  ntfy:
+    ports: !reset []
+    restart: unless-stopped
+    logging: *logging
+  lgtm:
+    ports: !override ["127.0.0.1:3001:3000"]
+    restart: unless-stopped
+    logging: *logging
+  uptime-kuma:
+    ports: !override ["127.0.0.1:3002:3001"]
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  edgedata: {}
+  edgeconfig: {}

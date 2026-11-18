@@ -1,0 +1,33 @@
+# Despliegue continuo a STAGING: cada push a main cuyas imágenes pasaron Trivy (images.yml).
+# Entra por SSH al servidor, fija TAG al sha recién publicado, migra y levanta. Ver docs/08-despliegue.md.
+#
+# Secretos del repo en Woodpecker: staging_host, deploy_user, deploy_ssh_key (clave SOLO de despliegue;
+# en el servidor, ese usuario está en el grupo docker y es dueño de /opt/moda-staging).
+when:
+  - event: push
+    branch: ${CI_REPO_DEFAULT_BRANCH}
+
+depends_on: [images]
+
+skip_clone: true
+
+steps:
+  - name: desplegar-staging
+    image: appleboy/drone-ssh:1.8
+    settings:
+      host:
+        from_secret: staging_host
+      username:
+        from_secret: deploy_user
+      key:
+        from_secret: deploy_ssh_key
+      command_timeout: 15m
+      script_stop: true
+      script:
+        - cd /opt/moda-staging
+        - git fetch --quiet origin && git checkout --quiet --detach ${CI_COMMIT_SHA}
+        - sed -i "s/^TAG=.*/TAG=${CI_COMMIT_SHA:0:8}/" .env
+        - docker compose pull --quiet
+        - docker compose run --rm migrate
+        - docker compose up -d --remove-orphans --wait --wait-timeout 300
+        - docker compose ps --format 'table {{.Service}}\t{{.Status}}'

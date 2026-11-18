@@ -1,0 +1,38 @@
+# Cliente frp (servicio frpc de deploy/compose.demo.yml): abre un túnel SALIENTE hacia el servidor frps
+# de la universidad, así la demo que corre en un PC detrás de NAT queda en un dominio público con HTTPS.
+# No hace falta abrir puertos en el router ni IP pública. Ver docs/08-despliegue.md, "Exponer la demo con frp".
+#
+# Los valores llegan por variables de entorno (frp renderiza {{ .Envs.X }} al cargar el archivo).
+
+serverAddr = "{{ .Envs.FRP_SERVER_ADDR }}"
+serverPort = {{ or .Envs.FRP_SERVER_PORT "7000" }}
+# El cliente se autentica con un token compartido; el canal cliente-servidor va cifrado con TLS.
+auth.method = "token"
+auth.token = "{{ .Envs.FRP_TOKEN }}"
+transport.tls.enable = true
+# Si el servidor no responde al arrancar, reintenta en vez de terminar (la demo sigue en localhost).
+loginFailExit = false
+
+# La tienda completa entra por el WAF, igual que en local: storefront, /api, /ws, /admin, /media.
+[[proxies]]
+name = "{{ or .Envs.FRP_PROXY_PREFIX "moda" }}-tienda"
+type = "http"
+localIP = "waf"
+localPort = 8080
+customDomains = ["{{ .Envs.FRP_DEMO_DOMAIN }}"]
+
+# Página de pago del simulador: la abre el navegador del cliente al pagar con tarjeta.
+[[proxies]]
+name = "{{ or .Envs.FRP_PROXY_PREFIX "moda" }}-pagos"
+type = "http"
+localIP = "pasarela-simulada"
+localPort = 3000
+customDomains = ["{{ .Envs.FRP_PAYSIM_DOMAIN }}"]
+
+# ntfy: avisos de ofertas a la app del motorizado (NTFY_PUBLIC_URL).
+[[proxies]]
+name = "{{ or .Envs.FRP_PROXY_PREFIX "moda" }}-ntfy"
+type = "http"
+localIP = "ntfy"
+localPort = 80
+customDomains = ["{{ .Envs.FRP_NTFY_DOMAIN }}"]

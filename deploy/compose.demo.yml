@@ -1,0 +1,49 @@
+# Demo pública desde un PC sin IP pública (laptop del equipo, PC del laboratorio), con frp.
+# Se suma a docker-compose.yml (desarrollo, imágenes construidas en local):
+#
+#   docker compose -f docker-compose.yml -f deploy/compose.demo.yml \
+#     --profile front --profile backoffice --profile sims --profile demo up -d --build
+#
+# frpc abre un túnel saliente al frps de la universidad (infra/frp/server) y publica tres dominios:
+# la tienda (vía WAF), la página de pago simulada y ntfy. El TLS lo pone el Caddy del servidor frps.
+# Variables en .env: FRP_SERVER_ADDR, FRP_TOKEN, FRP_DEMO_DOMAIN, FRP_PAYSIM_DOMAIN, FRP_NTFY_DOMAIN.
+# Ver docs/08-despliegue.md, "Exponer la demo con frp".
+
+x-demo-urls: &demo-urls
+  # Lo que ve el navegador o el teléfono: los dominios públicos, no localhost.
+  PAYSIM_PUBLIC_URL: https://${FRP_PAYSIM_DOMAIN:-pagos.invalid}
+  PAYMENT_RETURN_URL: https://${FRP_DEMO_DOMAIN:-demo.invalid}/checkout/resultado
+  STOREFRONT_URL: https://${FRP_DEMO_DOMAIN:-demo.invalid}
+  NTFY_PUBLIC_URL: https://${FRP_NTFY_DOMAIN:-ntfy.invalid}
+  # Expuesta a internet: el límite de intentos de login va siempre activo (el .env de la demo local lo apaga).
+  RATE_LIMIT_ENABLED: "true"
+
+services:
+  frpc:
+    profiles: [demo]
+    image: fatedier/frpc:v0.70.0
+    command: ["-c", "/etc/frp/frpc.toml"]
+    environment:
+      FRP_SERVER_ADDR: ${FRP_SERVER_ADDR:-}
+      FRP_SERVER_PORT: ${FRP_SERVER_PORT:-7000}
+      FRP_TOKEN: ${FRP_TOKEN:-}
+      FRP_DEMO_DOMAIN: ${FRP_DEMO_DOMAIN:-}
+      FRP_PAYSIM_DOMAIN: ${FRP_PAYSIM_DOMAIN:-}
+      FRP_NTFY_DOMAIN: ${FRP_NTFY_DOMAIN:-}
+      FRP_PROXY_PREFIX: ${FRP_PROXY_PREFIX:-moda}
+    volumes:
+      - ./infra/frp/frpc.toml:/etc/frp/frpc.toml:ro
+    depends_on: [waf]
+    restart: unless-stopped
+
+  api:
+    environment: *demo-urls
+  worker:
+    environment: *demo-urls
+  realtime:
+    environment: *demo-urls
+  web:
+    build:
+      args:
+        # Canónicas y sitemap con el dominio público (se fija al construir la imagen).
+        NEXT_PUBLIC_SITE_URL: https://${FRP_DEMO_DOMAIN:-demo.invalid}

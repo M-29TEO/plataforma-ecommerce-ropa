@@ -1,0 +1,103 @@
+# Reglas propias de Semgrep para el backend (complementan p/owasp-top-ten, p/nodejs, p/typescript
+# y p/secrets). Correr con:  cd backend && npm run sec:semgrep   (ver docs/07-seguridad.md)
+rules:
+  - id: moda-sql-interpolacion-de-entrada
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      SQL con un valor de la petición interpolado en el texto (A03 inyección). Pasa el valor como
+      parámetro ($1, $2...) o, si es un nombre de columna, valídalo contra una lista blanca.
+    metadata: { owasp: 'A03:2021 - Injection', cwe: 'CWE-89' }
+    patterns:
+      - pattern-either:
+          - pattern: $DB.query(`...${$OBJ.$F}...`, ...)
+          - pattern: $DB.query(`...${$OBJ}...`, ...)
+      - metavariable-regex:
+          metavariable: $OBJ
+          regex: ^(dto|body|query|q|params|cmd|input|filter|req|request|args)$
+
+  - id: moda-fetch-con-clave-sin-sanear
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      URL armada con una clave o ruta variable (A01/A10: path traversal o SSRF). Para el
+      almacenamiento usa ObjectStorage (assertSafeStorageKey + encodeURIComponent por segmento);
+      para servicios externos, una lista blanca de hosts.
+    metadata: { owasp: 'A10:2021 - Server-Side Request Forgery', cwe: 'CWE-918' }
+    patterns:
+      - pattern: fetch(`...${$X}...`, ...)
+      - metavariable-regex:
+          metavariable: $X
+          regex: (?i)(key|path|endpoint|url|file)$
+      - pattern-not-inside: |
+          class SeaweedFilerStorage { ... }
+
+  - id: moda-jwt-verify-sin-algoritmos
+    languages: [typescript]
+    severity: ERROR
+    message: jwt.verify sin `algorithms` acepta el algoritmo que diga el token (A02/A07). Fija HS256.
+    metadata: { owasp: 'A02:2021 - Cryptographic Failures', cwe: 'CWE-347' }
+    patterns:
+      - pattern-either:
+          - pattern: jwt.verify($T, $S)
+          - pattern: jwt.verify($T, $S, {...})
+      - pattern-not: 'jwt.verify($T, $S, {..., algorithms: $A, ...})'
+
+  - id: moda-body-sin-dto
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      @Body/@Query sin una clase DTO con class-validator (A03/A04): el ValidationPipe no valida
+      `any` ni interfaces. Crea un DTO (test/platform/dto-coverage.int-spec.ts también lo detecta).
+    metadata: { owasp: 'A03:2021 - Injection', cwe: 'CWE-20' }
+    pattern-either:
+      - pattern: '@Body() $P: any'
+      - pattern: '@Query() $P: any'
+      - pattern: '@Body() $P: Record<$K, $V>'
+
+  - id: moda-archivo-servido-sin-helper
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      Archivo guardado servido con su Content-Type tal cual (A03 XSS almacenado). Usa
+      sendStoredFile: solo imágenes y PDF inline, el resto como descarga, nosniff y CSP sandbox.
+    metadata: { owasp: 'A03:2021 - Injection', cwe: 'CWE-79' }
+    patterns:
+      - pattern: $RES.setHeader('Content-Type', $F.contentType)
+      - pattern-not-inside: |
+          function sendStoredFile(...) { ... }
+
+  - id: moda-comparacion-de-secreto-no-constante
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      Firma o secreto comparado con === (A02 timing attack). Usa crypto.timingSafeEqual sobre
+      buffers del mismo largo.
+    metadata: { owasp: 'A02:2021 - Cryptographic Failures', cwe: 'CWE-208' }
+    patterns:
+      - pattern-either:
+          - pattern: $A === $B
+          - pattern: $A !== $B
+      - metavariable-regex:
+          metavariable: $A
+          regex: (?i)(signature|hmac|secret|digest|mac)$
+
+  - id: moda-hash-debil
+    languages: [typescript]
+    severity: ERROR
+    message: MD5/SHA-1 no sirven para seguridad (A02). Usa sha256 (HMAC) o argon2id para contraseñas.
+    metadata: { owasp: 'A02:2021 - Cryptographic Failures', cwe: 'CWE-328' }
+    pattern-either:
+      - pattern: createHash('md5')
+      - pattern: createHash('sha1')
+      - pattern: createHmac('md5', ...)
+      - pattern: createHmac('sha1', ...)
+
+  - id: moda-handlebars-sin-escape
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      Plantilla compilada sin escape. Solo es válido para canales de texto plano (SMS, WhatsApp,
+      push); nunca para HTML con datos del cliente (A03).
+    metadata: { owasp: 'A03:2021 - Injection', cwe: 'CWE-79' }
+    pattern: '$HB.compile($S, {..., noEscape: true, ...})'

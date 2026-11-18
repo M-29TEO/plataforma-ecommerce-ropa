@@ -1,0 +1,45 @@
+{
+  "name": "moda-storefront",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Storefront del e-commerce de moda (Next.js, PWA): catálogo con SSR/ISR, carrito, checkout, tracking en vivo",
+  "license": "UNLICENSED",
+  "scripts": {
+    "predev": "node scripts/copy-maplibre-worker.mjs",
+    "prebuild": "node scripts/copy-maplibre-worker.mjs",
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start -p 3100",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "images:demo": "node scripts/generate-demo-images.mjs"
+  },
+  "dependencies": {
+    "@protomaps/basemaps": "^5.7.2",
+    "maplibre-gl": "^6.12.0",
+    "next": "^16.3.8",
+    "pmtiles": "^4.5.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "server-only": "^0.0.1",
+    "socket.io-client": "^4.8.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^24.19.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.8",
+    "jsdom": "^30.1.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3"
+  }
+}

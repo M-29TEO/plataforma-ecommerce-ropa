@@ -1,0 +1,37 @@
+# Copia de los backups FUERA del servidor (repo2 de pgBackRest), cifrada con AES-256 antes de salir.
+# Destino: un almacenamiento S3 con HTTPS en OTRO host. Sin servicios pagos: SeaweedFS (el mismo del
+# stack) en el servidor de la universidad o en un PC del laboratorio, con infra/backup-host/compose.yml.
+# Si el servidor de prod se pierde entero, se restaura desde aquí en otro host (docs/08-despliegue.md,
+# DRP escenario 3). Lo usa prod; el simulacro de CI lo prueba contra un SeaweedFS desechable.
+#
+# Por qué S3 y no SFTP: la imagen de PostGIS (Debian 11) trae libssh2 1.9 con libgcrypt, que no
+# negocia con OpenSSH >= 8.8 (sin curve25519/ECDH ni firmas rsa-sha2). S3 usa el cliente HTTPS propio
+# de pgBackRest con OpenSSL. Lo descubrió el simulacro (infra/pgbackrest/drill.sh).
+#
+# Certificado del destino: con Let's Encrypt (dominio público) no hace falta nada. Con un certificado
+# propio, su CA en deploy/secrets/s3/ca.crt y BACKUP_S3_CA_FILE=/etc/pgbackrest/s3/ca.crt.
+x-repo2: &repo2
+  PGBACKREST_REPO2_TYPE: s3
+  PGBACKREST_REPO2_PATH: ${BACKUP_S3_PATH:-/moda}
+  PGBACKREST_REPO2_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:?falta BACKUP_S3_ENDPOINT (host del S3 de backups, sin https://)}
+  PGBACKREST_REPO2_STORAGE_PORT: ${BACKUP_S3_PORT:-443}
+  PGBACKREST_REPO2_S3_BUCKET: ${BACKUP_S3_BUCKET:-moda-backups}
+  PGBACKREST_REPO2_S3_REGION: ${BACKUP_S3_REGION:-us-east-1}
+  PGBACKREST_REPO2_S3_URI_STYLE: path
+  PGBACKREST_REPO2_S3_KEY: ${BACKUP_S3_KEY:?falta BACKUP_S3_KEY}
+  PGBACKREST_REPO2_S3_KEY_SECRET: ${BACKUP_S3_KEY_SECRET:?falta BACKUP_S3_KEY_SECRET}
+  PGBACKREST_REPO2_STORAGE_CA_FILE: ${BACKUP_S3_CA_FILE:-/etc/ssl/certs/ca-certificates.crt}
+  PGBACKREST_REPO2_CIPHER_TYPE: aes-256-cbc
+  PGBACKREST_REPO2_CIPHER_PASS: ${BACKUP_CIPHER_PASS:?falta BACKUP_CIPHER_PASS (openssl rand -base64 48; guárdala también FUERA del servidor)}
+  PGBACKREST_REPO2_RETENTION_FULL: ${BACKUP_REPO2_RETENTION_FULL:-8}
+
+# postgres también lo necesita: archive-push copia cada WAL a los dos repositorios.
+services:
+  postgres:
+    environment: *repo2
+    volumes:
+      - ${BACKUP_S3_CA_DIR:-./deploy/secrets/s3}:/etc/pgbackrest/s3:ro
+  pgbackrest:
+    environment: *repo2
+    volumes:
+      - ${BACKUP_S3_CA_DIR:-./deploy/secrets/s3}:/etc/pgbackrest/s3:ro

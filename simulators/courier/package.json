@@ -1,0 +1,13 @@
+{
+  "name": "moda-couriersim",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Courier simulado (tipo Servientrega): cotiza, genera guías PDF y avanza estados con webhooks firmados con HMAC",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  }
+}

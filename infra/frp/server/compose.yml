@@ -1,0 +1,35 @@
+# Lado servidor del túnel de la demo (servidor de la universidad con IP pública y DNS apuntando a él).
+#   cp env.example .env   # y completa dominios y FRP_TOKEN (openssl rand -base64 32)
+#   docker compose up -d
+# Puertos abiertos en el firewall: 80 y 443 (Caddy, HTTPS) y 7000 (túnel de frpc, TLS + token).
+name: moda-frp
+
+services:
+  frps:
+    image: fatedier/frps:v0.70.0
+    command: ["-c", "/etc/frp/frps.toml"]
+    environment:
+      FRP_TOKEN: ${FRP_TOKEN:?falta FRP_TOKEN}
+    ports: ["7000:7000"]
+    volumes:
+      - ./frps.toml:/etc/frp/frps.toml:ro
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      FRP_DEMO_DOMAIN: ${FRP_DEMO_DOMAIN:?falta FRP_DEMO_DOMAIN}
+      FRP_PAYSIM_DOMAIN: ${FRP_PAYSIM_DOMAIN:?falta FRP_PAYSIM_DOMAIN}
+      FRP_NTFY_DOMAIN: ${FRP_NTFY_DOMAIN:?falta FRP_NTFY_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on: [frps]
+    restart: unless-stopped
+
+volumes:
+  caddydata: {}
+  caddyconfig: {}

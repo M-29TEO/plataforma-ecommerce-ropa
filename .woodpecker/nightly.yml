@@ -1,0 +1,26 @@
+# Tareas nocturnas (cron "nightly" en Woodpecker: Settings > Cron, 0 7 * * * = 02:00 en Ecuador).
+#  - Simulacro de restauración de pgBackRest: PITR + pérdida del disco (infra/pgbackrest/drill.sh).
+#    Un backup que nunca se restauró no es un backup: si falla, el pipeline queda en rojo.
+#  - Trivy del repositorio: CVE nuevos en dependencias que no cambiaron.
+when:
+  - event: cron
+    cron: nightly
+  - event: manual
+
+steps:
+  - name: simulacro-restauracion
+    image: docker:29-cli
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Proyecto compose propio por pipeline: dos simulacros a la vez no se pisan.
+      DRILL_PROJECT: moda-drill-${CI_PIPELINE_NUMBER}
+    commands:
+      - apk add --no-cache bash >/dev/null
+      - bash infra/pgbackrest/drill.sh
+
+  - name: trivy-repo
+    image: aquasec/trivy:latest
+    depends_on: []
+    commands:
+      - trivy fs --config trivy.yaml --severity HIGH,CRITICAL --exit-code 1 --no-progress .

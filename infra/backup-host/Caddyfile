@@ -1,0 +1,12 @@
+# TLS (Let's Encrypt) delante del S3 de backups. Ver compose.yml.
+{
+	email {$ACME_EMAIL:admin@localhost}
+}
+
+{$BACKUP_S3_DOMAIN} {
+	# Los segmentos y archivos de backup pueden ser grandes.
+	request_body {
+		max_size 10GB
+	}
+	reverse_proxy seaweedfs:8333
+}

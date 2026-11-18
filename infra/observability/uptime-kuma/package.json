@@ -1,0 +1,9 @@
+{
+  "name": "moda-kuma-setup",
+  "private": true,
+  "description": "Configura Uptime Kuma (admin, notificación ntfy y monitores de /v1/health) para el perfil obs",
+  "type": "module",
+  "license": "UNLICENSED",
+  "scripts": { "setup": "node setup.mjs" },
+  "dependencies": { "socket.io-client": "^4.8.1" }
+}

@@ -1,0 +1,17 @@
+# Trivy (bash backend/scripts/security/scan.sh trivy). Ver docs/07-seguridad.md, sección Herramientas.
+scan:
+  scanners: [vuln, misconfig, secret]
+  skip-dirs:
+    - "**/node_modules"
+    - "**/dist"
+    - backend/test/fixtures     # certificado y clave de PRUEBA del SRI (autofirmados, solo tests)
+# El script genera el informe con todas las severidades y falla solo con HIGH/CRITICAL.
+vulnerability:
+  ignore-unfixed: false
+pkg:
+  include-dev-deps: false
+misconfiguration:
+  # Trivy no tiene escáner de docker-compose (lo ignoraba con un error); los Dockerfiles sí.
+  scanners: [dockerfile]
+ignorefile: .trivyignore
+timeout: 15m0s

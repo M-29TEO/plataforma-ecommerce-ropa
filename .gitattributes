@@ -1,0 +1,7 @@
+# Scripts y archivos que corren dentro de contenedores Linux: siempre con LF, aunque se clonen en
+# Windows (un CRLF rompe el shebang de bash y las rutas de los .conf).
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.conf          text eol=lf
+*.toml          text eol=lf
+Caddyfile*      text eol=lf

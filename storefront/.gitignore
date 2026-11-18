@@ -1,0 +1,10 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+e2e-out/
+test-results/
+playwright-report/
+.env*.local
+# Copia generada (scripts/copy-maplibre-worker.mjs)
+public/maplibre-gl-worker.mjs

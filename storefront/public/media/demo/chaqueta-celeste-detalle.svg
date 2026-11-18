@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="220 260 360 450" width="800" height="1000" preserveAspectRatio="xMidYMid slice" role="img">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F6F2EC"/><stop offset="1" stop-color="#E9E2D8"/></linearGradient>
+  <linearGradient id="shade" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#000" stop-opacity=".16"/><stop offset=".35" stop-color="#fff" stop-opacity=".10"/>
+    <stop offset=".65" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".18"/>
+  </linearGradient>
+  <pattern id="weave" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <path d="M0 0 L0 8" stroke="#000" stroke-opacity=".07" stroke-width="3"/>
+  </pattern>
+  <style>.st{fill:none;stroke:rgba(60,50,40,.35);stroke-width:3;stroke-dasharray:9 7;stroke-linecap:round}.btn{fill:#8a7f70;opacity:.85}.hood{fill:#8DB8DE;stroke:rgba(0,0,0,.18);stroke-width:2}</style>
+</defs>
+<rect x="0" y="0" width="800" height="1000" fill="url(#bg)"/>
+<ellipse cx="400" cy="930" rx="250" ry="22" fill="#000" opacity=".07"/>
+<g>
+  <path d="M262 206 L346 172 L400 214 L454 172 L538 206 L612 300 L652 690 L594 700 L556 380 L556 846 L244 846 L244 380 L206 700 L148 690 L188 300 Z" fill="#8DB8DE" stroke="rgba(0,0,0,.18)" stroke-width="2"/>
+  <path d="M262 206 L346 172 L400 214 L454 172 L538 206 L612 300 L652 690 L594 700 L556 380 L556 846 L244 846 L244 380 L206 700 L148 690 L188 300 Z" fill="url(#shade)"/>
+  <path d="M262 206 L346 172 L400 214 L454 172 L538 206 L612 300 L652 690 L594 700 L556 380 L556 846 L244 846 L244 380 L206 700 L148 690 L188 300 Z" fill="url(#weave)"/>
+  <path d="M346 172 L372 330 L400 214 L428 330 L454 172" class="st"/><path d="M400 330 L400 840" class="st"/><path d="M272 470 h88 v96 h-88 Z M440 470 h88 v96 h-88 Z" class="st"/><circle cx="384" cy="400" r="8" class="btn"/><circle cx="384" cy="500" r="8" class="btn"/><circle cx="384" cy="600" r="8" class="btn"/><circle cx="384" cy="700" r="8" class="btn"/><path d="M206 684 L148 674 M594 684 L652 674 M244 826 L556 826" class="st"/>
+</g>
+</svg>

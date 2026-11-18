@@ -1,0 +1,353 @@
+name: moda-ecommerce
+
+# Perfiles:
+#   docker compose up                                  -> núcleo (~4-6 GB RAM)
+#   docker compose --profile maps up                   -> + Nominatim y OSRM (~8-10 GB)
+#   docker compose --profile maps --profile obs up     -> todo (~12-16 GB)
+#   docker compose --profile sims up                   -> + simuladores (pasarela de pago, courier y SRI)
+#   Backups: el sidecar pgbackrest corre siempre junto a postgres (full semanal + diferencial diario,
+#   WAL continuo). Restaurar: bash infra/pgbackrest/restore.sh  (ver docs/08-despliegue.md)
+#   docker compose --profile front --profile sims up -d --build
+#                                                      -> tienda completa en http://localhost: WAF + Caddy,
+#                                                         storefront (web), api, worker y realtime + simuladores
+#   docker compose --profile front --profile backoffice --profile sims up -d --build
+#                                                      -> + backoffice en http://localhost/admin (Next.js)
+#   Demo (docs/DEMO.md): cp .env.demo.example .env && docker compose up -d --build
+#                                                      -> lo anterior + migraciones y seed:demo (perfil seed):
+#                                                         50 productos, clientes, motorizados y 3 meses de pedidos
+#
+# Sin perfil se levanta solo la infraestructura (postgres, valkey, seaweedfs, mailpit, ntfy): así se
+# desarrolla con la API y el storefront fuera de Docker (npm run dev:api / npm run dev).
+# El perfil front necesita STORE_TENANT_ID en .env (lo imprime npm run seed:dev en el backend; la demo lo trae fijo).
+# Con el perfil front, el servicio migrate aplica las migraciones antes de levantar api, worker y realtime.
+
+x-app: &app
+  build: { context: ./backend, dockerfile: Dockerfile }
+  env_file: .env
+  depends_on:
+    postgres: { condition: service_healthy }
+    valkey:   { condition: service_started }
+  environment:
+    DATABASE_URL: postgres://app:${PG_PASSWORD}@postgres:5432/moda
+    VALKEY_URL: redis://valkey:6379
+    S3_ENDPOINT: http://seaweedfs:8333
+    # Vacías (como en .env.demo.example) si no se levantan los perfiles maps/obs: un nombre de servicio que no
+    # existe tarda segundos en fallar en el DNS de Docker y esas búsquedas acaparan el pool de libuv de Node.
+    NOMINATIM_URL: ${NOMINATIM_URL-http://nominatim:8080}
+    OSRM_URL: ${OSRM_URL-http://osrm:5000}
+    PAYMENT_GATEWAY: simulator
+    # PAYSIM_SECRET llega desde .env (env_file). La página de pago la abre el navegador:
+    PAYSIM_PUBLIC_URL: http://localhost:${PAYSIM_PORT:-8081}
+    # Reversos de reembolsos: servidor a servidor, por la red interna.
+    PAYSIM_API_URL: http://pasarela-simulada:3000
+    REFUND_DUAL_APPROVAL_ABOVE: "100.00"   # reembolsos por encima de este monto: dos aprobaciones
+    PAYMENT_RETURN_URL: http://localhost/checkout/resultado
+    SEAWEEDFS_FILER_URL: http://seaweedfs:8888
+    COURIER_ADAPTERS: simulator
+    # COURIERSIM_SECRET y COURIERSIM_API_KEY llegan desde .env (env_file).
+    COURIERSIM_URL: http://courier-simulado:3000
+    SRI_MODE: simulator            # simulator | pruebas | produccion
+    SRI_URL: http://sri-simulado:3000
+    # Firma XAdES: certificado autofirmado de backend/secrets/sri (bash backend/scripts/generate-sri-cert.sh)
+    SRI_CERT_PATH: /app/secrets/sri/firma.crt.pem
+    SRI_KEY_PATH: /app/secrets/sri/firma.key.pem
+    DOCUMENT_STORAGE: seaweedfs
+    RETURN_PHOTO_STORAGE: seaweedfs   # fotos de las devoluciones
+    RETURN_WINDOW_DAYS: 30
+    # La cookie refresh_token solo viaja a las rutas de sesión (Caddy recibe /api/v1/... y quita /api).
+    REFRESH_COOKIE_PATH: /api/v1/auth
+    # MFA_ENCRYPTION_KEY y DATA_ENCRYPTION_KEY llegan desde .env (env_file).
+    # Seguridad (docs/07-seguridad.md): el storefront y el backoffice van por el mismo dominio (Caddy),
+    # así que CORS no admite orígenes cruzados; Caddy es el único proxy de confianza para X-Forwarded-For.
+    CORS_ORIGINS: ""
+    TRUST_PROXY: "loopback, uniquelocal"
+    RATE_LIMIT_STORAGE: valkey
+    SMTP_URL: smtp://mailpit:1025
+    NTFY_URL: http://ntfy:80
+    NOTIFICATION_TRANSPORT: live   # Mailpit + Web Push (VAPID) + ntfy; WhatsApp y SMS simulados (log)
+    STOREFRONT_URL: http://localhost
+    # VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY y NTFY_STAFF_TOPIC llegan desde .env (npm run vapid:keys).
+    # App del motorizado: NTFY_PUBLIC_URL (ntfy visto desde el teléfono) y DELIVERY_OTP_SECRET, también desde .env.
+    OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://lgtm:4318}
+  volumes:
+    - ./backend/secrets/sri:/app/secrets/sri:ro
+  restart: unless-stopped
+
+services:
+  # ---------- BORDE ----------
+  waf:
+    profiles: [front]
+    image: owasp/modsecurity-crs:nginx-alpine
+    ports: ["80:8080"]
+    environment:
+      BACKEND: http://caddy:80
+      BLOCKING_PARANOIA: 1
+    depends_on: [caddy]
+
+  caddy:
+    profiles: [front]
+    image: caddy:2-alpine
+    # Tenant de la tienda (uuid de iam.tenants): Caddy lo fija en X-Tenant-Id y pisa el del cliente.
+    environment:
+      STORE_TENANT_ID: ${STORE_TENANT_ID:-}
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./infra/tiles:/srv/tiles:ro
+    # /admin* va al backoffice (perfil backoffice); sin él, esas rutas responden 502.
+    depends_on:
+      api: { condition: service_started }
+      realtime: { condition: service_started }
+      web: { condition: service_started }
+      backoffice: { condition: service_started, required: false }
+
+  # ---------- APLICACIÓN ----------
+  # Firma electrónica AUTOFIRMADA del SRI (simulador) si backend/secrets/sri no la tiene: así la demo
+  # arranca desde un clon limpio. Clave legible por el usuario node de la imagen (solo pruebas, nunca la real).
+  sri-cert:
+    profiles: [front]
+    image: alpine:3.20
+    volumes:
+      - ./backend/secrets/sri:/out
+      - ./backend/scripts/generate-sri-cert.sh:/generate-sri-cert.sh:ro
+    command: ["sh", "-c", "[ -f /out/firma.key.pem ] || { apk add --no-cache bash openssl >/dev/null && bash /generate-sri-cert.sh /out && chmod 644 /out/firma.key.pem /out/firma.p12; }"]
+    restart: "no"
+  # Migraciones (una vez por "up"): node-pg-migrate solo aplica las pendientes.
+  migrate:
+    <<: *app
+    profiles: [front]
+    command: ["node", "node_modules/node-pg-migrate/bin/node-pg-migrate.js", "-m", "migrations", "-j", "js", "--check-order", "up"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck: { disable: true }
+    restart: "no"
+  # Datos de la demo (docs/DEMO.md): seed:dev + clientes, motorizados y 3 meses de pedidos. Idempotente:
+  # con el historial ya cargado solo refresca usuarios, catálogo y vistas. Solo con el perfil seed.
+  seed:
+    <<: *app
+    profiles: [seed]
+    command: node dist/scripts/seed-demo.js
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      valkey: { condition: service_started }
+    healthcheck: { disable: true }
+    restart: "no"
+  api:
+    <<: *app
+    profiles: [front]
+    command: node dist/apps/api/main.js
+    depends_on: &app-deps
+      postgres: { condition: service_healthy }
+      valkey: { condition: service_started }
+      migrate: { condition: service_completed_successfully }
+      sri-cert: { condition: service_completed_successfully }
+      # Sin el perfil seed no existe y no se espera.
+      seed: { condition: service_completed_successfully, required: false }
+  worker:
+    <<: *app
+    profiles: [front]
+    command: node dist/apps/worker/main.js
+    depends_on: *app-deps
+    healthcheck: { disable: true }   # el HEALTHCHECK de la imagen es el de la API (HTTP)
+  # Socket.IO (tracking en vivo) en :3002; Caddy enruta /ws/* aquí. Puerto interno: no choca con Uptime Kuma.
+  realtime:
+    <<: *app
+    profiles: [front]
+    command: node dist/apps/realtime/main.js
+    depends_on: *app-deps
+    healthcheck: { disable: true }
+  # Storefront (Next.js). Las NEXT_PUBLIC_* van en el build; el SSR llama a la API por la red interna.
+  web:
+    profiles: [front]
+    build:
+      context: ./storefront
+      args:
+        NEXT_PUBLIC_SITE_URL: ${STOREFRONT_PUBLIC_URL:-http://localhost}
+        NEXT_PUBLIC_API_URL: /api
+        # osm (desarrollo) | pmtiles (infra/tiles/ecuador.pmtiles servido por Caddy en /tiles)
+        NEXT_PUBLIC_MAP_TILES: ${MAP_TILES:-osm}
+    environment:
+      API_INTERNAL_URL: http://api:3000/v1
+      STORE_TENANT_ID: ${STORE_TENANT_ID:-}
+    depends_on: [api]
+    restart: unless-stopped
+  # Backoffice (Next.js, basePath /admin). Todo corre en el navegador del personal contra /api y /ws
+  # del mismo dominio: no necesita variables de servidor ni acceso directo a la API.
+  backoffice:
+    profiles: [backoffice]
+    build:
+      context: ./backoffice
+      args:
+        NEXT_PUBLIC_API_URL: /api
+        NEXT_PUBLIC_MAP_TILES: ${MAP_TILES:-osm}
+    depends_on: [api]
+    restart: unless-stopped
+
+  # ---------- DATOS ----------
+  # PostGIS + pgBackRest (infra/postgres): archiva cada WAL en el repositorio de backups (PITR).
+  postgres:
+    build: ./infra/postgres
+    image: moda-postgres:local
+    environment:
+      POSTGRES_DB: moda
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pgsocket:/var/run/postgresql
+      - pgbackrest:/var/lib/pgbackrest
+    healthcheck:
+      # Por TCP: en el primer arranque el servidor temporal de initdb solo escucha por socket y se reinicia;
+      # pg_isready sin -h lo daría por sano y las migraciones chocarían con ese reinicio.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U app -d moda"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Backups diarios con pgBackRest (misma imagen). Comparte con postgres los datos, el socket y el
+  # repositorio. Al arrancar sin backups hace un full; luego full el domingo y diferencial el resto,
+  # a las BACKUP_HOUR (America/Guayaquil). Restaurar: bash infra/pgbackrest/restore.sh
+  pgbackrest:
+    build: ./infra/postgres
+    image: moda-postgres:local
+    user: postgres
+    command: moda-backup-loop
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      BACKUP_HOUR: ${BACKUP_HOUR:-2}
+      BACKUP_FULL_DOW: ${BACKUP_FULL_DOW:-7}
+      NTFY_URL: http://ntfy:80
+      NTFY_OPS_TOPIC: ${NTFY_OPS_TOPIC:-moda-demo-operacion}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pgsocket:/var/run/postgresql
+      - pgbackrest:/var/lib/pgbackrest
+    # Sano si hubo un backup bueno en las últimas 26 h.
+    healthcheck:
+      test: ["CMD-SHELL", "find /var/lib/pgbackrest/last-ok -mmin -1560 | grep -q ."]
+      interval: 5m
+      start_period: 30m
+    restart: unless-stopped
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes: [valkeydata:/data]
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: server -s3 -dir=/data
+    ports: ["8333:8333"]
+    volumes: [s3data:/data]
+
+  # ---------- SIMULADORES (perfil sims) ----------
+  # Página de pago en http://localhost:8081 (PAYSIM_PORT). Si la API corre fuera de Docker (npm run dev:api):
+  #   PAYSIM_WEBHOOK_URL=http://host.docker.internal:3000/v1/webhooks/payments/simulator \
+  #   docker compose --profile sims up pasarela-simulada
+  pasarela-simulada:
+    profiles: [sims]
+    build: ./simulators/payments
+    ports: ["${PAYSIM_PORT:-8081}:3000"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      WEBHOOK_URL: ${PAYSIM_WEBHOOK_URL:-http://api:3000/v1/webhooks/payments/simulator}
+      WEBHOOK_SECRET: ${PAYSIM_SECRET}
+    restart: unless-stopped
+  # Courier simulado: API en http://localhost:8082 (COURIERSIM_PORT, x-api-key). Si la API corre fuera de Docker:
+  #   COURIERSIM_WEBHOOK_URL=http://host.docker.internal:3000/v1/webhooks/couriers/simulator \
+  #   docker compose --profile sims up courier-simulado
+  courier-simulado:
+    profiles: [sims]
+    build: ./simulators/courier
+    ports: ["${COURIERSIM_PORT:-8082}:3000"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      WEBHOOK_URL: ${COURIERSIM_WEBHOOK_URL:-http://api:3000/v1/webhooks/couriers/simulator}
+      WEBHOOK_SECRET: ${COURIERSIM_SECRET}
+      API_KEY: ${COURIERSIM_API_KEY}
+      STEP_MS: ${COURIERSIM_STEP_MS:-20000}
+    restart: unless-stopped
+  # SRI simulado: web services offline de recepción y autorización en http://localhost:8083 (SRISIM_PORT).
+  # Si la API/worker corren fuera de Docker: SRI_URL=http://localhost:8083 en backend/.env.
+  sri-simulado:
+    profiles: [sims]
+    build: ./simulators/sri
+    ports: ["${SRISIM_PORT:-8083}:3000"]
+    environment:
+      AUTH_DELAY_MS: ${SRISIM_AUTH_DELAY_MS:-3000}
+      CONSUMIDOR_FINAL_MAX: ${SRI_CONSUMIDOR_FINAL_MAX:-50}
+    restart: unless-stopped
+
+  # ---------- NOTIFICACIONES ----------
+  mailpit:
+    image: axllent/mailpit
+    # 8025: bandeja web (facturas del SRI, etc.) · 1025: SMTP para el backend fuera de Docker
+    ports: ["8025:8025", "1025:1025"]
+  ntfy:
+    image: binwiederhier/ntfy
+    command: serve
+    ports: ["8090:80"]
+
+  # ---------- MAPAS (perfil maps) ----------
+  nominatim:
+    profiles: [maps]
+    image: mediagis/nominatim:4.4
+    environment:
+      PBF_URL: https://download.geofabrik.de/south-america/ecuador-latest.osm.pbf
+      REPLICATION_URL: https://download.geofabrik.de/south-america/ecuador-updates/
+    volumes: [nominatimdata:/var/lib/postgresql/14/main]
+    shm_size: 1g
+
+  osrm:
+    profiles: [maps]
+    image: ghcr.io/project-osrm/osrm-backend
+    # Preprocesar una vez (ver docs/02-stack-open-source.md, sección 2.6)
+    command: osrm-routed --algorithm mld /data/ecuador-latest.osrm
+    volumes: [./infra/osrm:/data]
+
+  # ---------- OBSERVABILIDAD (perfil obs) ----------
+  # Grafana en http://localhost:3001 (dashboard "Moda · Operación", alertas a ntfy). Prometheus, Loki y
+  # Tempo van dentro de la imagen; api y worker les envían trazas, métricas y logs por OTLP (4318).
+  # Con la API fuera de Docker (npm run dev:api): OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318.
+  lgtm:
+    profiles: [obs]
+    image: grafana/otel-lgtm:0.35.0
+    ports: ["3001:3000", "127.0.0.1:4318:4318"]
+    environment:
+      GF_SERVER_ROOT_URL: http://localhost:3001
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer          # anónimo solo mira; editar con admin / GRAFANA_ADMIN_PASSWORD
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      NTFY_OPS_TOPIC: ${NTFY_OPS_TOPIC:-moda-demo-operacion}
+    volumes:
+      - lgtmdata:/data
+      - ./infra/observability/grafana/dashboards:/otel-lgtm/moda-dashboards:ro
+      - ./infra/observability/grafana/provisioning/dashboards/moda.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/moda.yaml:ro
+      - ./infra/observability/grafana/provisioning/alerting/moda.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/moda.yaml:ro
+  # Uptime Kuma en http://localhost:3002. Los monitores de /v1/health y el aviso a ntfy los crea kuma-setup:
+  #   docker compose --profile obs run --rm kuma-setup
+  uptime-kuma:
+    profiles: [obs]
+    image: louislam/uptime-kuma:1
+    ports: ["3002:3001"]
+    volumes: [kumadata:/app/data]
+  kuma-setup:
+    profiles: [obs]
+    build: ./infra/observability/uptime-kuma
+    depends_on: [uptime-kuma]
+    environment:
+      KUMA_ADMIN_USER: ${KUMA_ADMIN_USER:-admin}
+      KUMA_ADMIN_PASSWORD: ${KUMA_ADMIN_PASSWORD:-}   # obligatoria (.env); sin ella kuma-setup termina con error
+      NTFY_OPS_TOPIC: ${NTFY_OPS_TOPIC:-moda-demo-operacion}
+    restart: "no"
+
+volumes:
+  pgdata: {}
+  pgsocket: {}
+  pgbackrest: {}
+  valkeydata: {}
+  s3data: {}
+  nominatimdata: {}
+  kumadata: {}
+  lgtmdata: {}

@@ -1,0 +1,120 @@
+# Integración continua (Woodpecker CI, docs/08-despliegue.md, sección "Pipeline").
+# En cada push, PR y a mano: lint, reglas de arquitectura (dependency-cruiser + schemas), tests y
+# análisis de seguridad del repositorio (Semgrep + Trivy). Si esto falla, images.yml no corre.
+#
+# Requisitos del repo en Woodpecker: marcarlo como "Trusted" (Settings > Project > Trusted: volumes),
+# porque los tests de integración usan Testcontainers con el Docker del agente (/var/run/docker.sock).
+when:
+  - event: [push, pull_request, manual]
+
+clone:
+  - name: clone
+    image: woodpeckerci/plugin-git
+    settings:
+      depth: 1
+      lfs: false
+
+steps:
+  # ---------- BACKEND ----------
+  - name: backend-deps
+    image: node:24-alpine
+    directory: backend
+    commands:
+      - npm ci --no-audit --no-fund
+
+  - name: backend-lint
+    image: node:24-alpine
+    directory: backend
+    depends_on: [backend-deps]
+    commands:
+      - npm run lint
+      - npm run typecheck
+
+  - name: backend-arquitectura
+    image: node:24-alpine
+    directory: backend
+    depends_on: [backend-deps]
+    commands:
+      # Regla 1 y ciclos (imports) + regla 2 (cada módulo solo usa sus tablas). docs/01, "Reglas de modularidad".
+      - npm run arch:check
+      - npm run arch:schemas
+
+  - name: backend-unit
+    image: node:24-alpine
+    directory: backend
+    depends_on: [backend-deps]
+    commands:
+      - npm run test:unit -- --ci
+
+  - name: backend-integracion
+    # Debian (no alpine): Testcontainers levanta PostgreSQL + PostGIS y Valkey desechables en el Docker
+    # del agente y se conecta a ellos por la puerta de enlace de la red del paso.
+    image: node:24-bookworm-slim
+    directory: backend
+    depends_on: [backend-unit]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TESTCONTAINERS_RYUK_DISABLED: "false"
+    commands:
+      - npm run test:int -- --ci
+
+  # ---------- FRONTENDS ----------
+  - name: storefront
+    image: node:24-alpine
+    directory: storefront
+    depends_on: []
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+    commands:
+      - npm ci --no-audit --no-fund
+      - npm run lint
+      - npm run typecheck
+      - npm test
+
+  - name: backoffice
+    image: node:24-alpine
+    directory: backoffice
+    depends_on: []
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+    commands:
+      - npm ci --no-audit --no-fund
+      - npm run lint
+      - npm run typecheck
+      - npm test
+
+  - name: rider-app
+    image: node:24-alpine
+    directory: rider-app
+    depends_on: []
+    commands:
+      - npm ci --no-audit --no-fund
+      - npm run lint
+      - npm run typecheck
+      - npm test -- --ci
+
+  - name: simuladores
+    image: node:24-alpine
+    depends_on: []
+    commands:
+      - for s in payments courier sri; do (cd simulators/$s && node --test) || exit 1; done
+
+  # ---------- SEGURIDAD DEL REPOSITORIO ----------
+  - name: semgrep
+    image: semgrep/semgrep:latest
+    depends_on: []
+    commands:
+      - >-
+        semgrep scan --metrics=off --error --severity ERROR
+        --config p/owasp-top-ten --config p/nodejs --config p/typescript --config p/secrets
+        --config .semgrep.yml --exclude backend/test --exclude '*.spec.ts'
+        backend simulators
+
+  - name: trivy-repo
+    # Dependencias (lockfiles), Dockerfiles, compose y secretos. Falla con HIGH/CRITICAL; los aceptados
+    # van justificados en .trivyignore (docs/07-seguridad.md).
+    image: aquasec/trivy:latest
+    depends_on: []
+    commands:
+      - trivy fs --config trivy.yaml --severity HIGH,CRITICAL --exit-code 1 --no-progress .

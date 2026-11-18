@@ -1,0 +1,13 @@
+# Servidor frp (en el servidor de la universidad, con IP pública). Ver infra/frp/server/compose.yml.
+# Recibe el túnel de frpc (puerto 7000) y reparte el tráfico HTTP por dominio (Host) en vhostHTTPPort,
+# que solo escucha en la red interna: delante está Caddy con TLS automático.
+
+bindPort = 7000
+vhostHTTPPort = 8080
+auth.method = "token"
+auth.token = "{{ .Envs.FRP_TOKEN }}"
+# Solo clientes con TLS (frpc lo trae activado).
+transport.tls.force = true
+# Sin panel web: la administración es por SSH.
+log.to = "console"
+log.level = "info"

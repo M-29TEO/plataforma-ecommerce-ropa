@@ -1,0 +1,55 @@
+# Seguridad en cada push y PR (docs/07-seguridad.md): SAST (Semgrep), SCA + misconfig + secretos
+# (Trivy) y los tests, incluidos los de seguridad (test/platform/security y dto-coverage).
+# Todo con herramientas open source y sin costo (runners de GitHub). ZAP (DAST) se corre a mano:
+# npm run sec:zap (tarda 20-60 min y levanta la API completa en Docker).
+name: seguridad
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 11 * * 1' # lunes 06:00 en Ecuador: CVE nuevos en dependencias que no cambiaron
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    container: semgrep/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          semgrep scan --metrics=off --error --severity ERROR
+          --config p/owasp-top-ten --config p/nodejs --config p/typescript --config p/secrets
+          --config .semgrep.yml
+          --exclude backend/test --exclude '*.spec.ts'
+          backend simulators
+
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy (dependencias, Dockerfile, compose y secretos)
+        run: >-
+          docker run --rm -v "$PWD:/src" -w /src aquasec/trivy:latest
+          fs --config trivy.yaml --severity HIGH,CRITICAL --exit-code 1 .
+
+  tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:unit
+      # Testcontainers usa el Docker del runner (PostgreSQL + PostGIS y Valkey desechables).
+      - run: npm run test:int
